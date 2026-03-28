@@ -29,7 +29,7 @@ def forward_to_topic(from_chat_id, message_id):
 
 
 def get_updates(offset=None):
-    url = f"https://api.telegram.org/bot8691548519:AAEiMgb2POy8kFhg5qZjXTt5M6pwgmVEXLI/getUpdates"
+    url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     params = {
         "timeout": 30,
         "offset": offset
