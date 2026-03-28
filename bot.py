@@ -17,29 +17,44 @@ def forward_to_topic(from_chat_id, message_id):
         "message_id": message_id,
         "message_thread_id": TOPIC_ID
     }
-    response = requests.post(url, data=data)
-    print("✅ Kopiert:", response.json())
-    return response.json()
+
+    try:
+        response = requests.post(url, data=data)
+        result = response.json()
+
+        if not result.get("ok"):
+            print("❌ Fehler:", result)
+        else:
+            print("✅ Weitergeleitet:", message_id)
+
+    except Exception as e:
+        print("🔥 Exception:", e)
+
 
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         update = request.get_json()
-        print("📨 Update:", update)
-        
+
         if 'channel_post' in update:
             post = update['channel_post']
+
             if post['chat']['id'] == CHANNEL_ID:
-                print("🎯 Kanal-Post erkannt!")
-                forward_to_topic(CHANNEL_ID, post['message_id'])
-        
+                message_id = post['message_id']
+                print("📨 Neuer Kanal-Post:", message_id)
+
+                forward_to_topic(CHANNEL_ID, message_id)
+
         return '', 200
-    abort(403)
+
+    return abort(403)
+
 
 @app.route('/')
 def index():
-    return "🚀 Telegram Copy Bot läuft! Webhook ready."
+    return "Bot läuft ✅"
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port)
