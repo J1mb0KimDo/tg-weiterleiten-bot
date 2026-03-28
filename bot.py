@@ -7,48 +7,49 @@ BASE_URL = os.getenv("BASE_URL")
 
 app = Flask(__name__)
 
-# Speicher
-USER_STATE = {}
-CONFIG = {
-    "channel_id": None,
-    "group_id": None,
-    "topic_id": None
-}
+# 🧠 Speicher pro User
+user_states = {}
+user_configs = {}
 
-# Webhook setzen
+# 🔗 Webhook setzen
 def set_webhook():
     if BASE_URL:
         url = f"{BASE_URL}/{TOKEN}"
         requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={url}")
 
-# Nachricht senden
+# 📤 Nachricht senden
 def send_message(chat_id, text, buttons=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    data = {"chat_id": chat_id, "text": text}
-
+    data = {
+        "chat_id": chat_id,
+        "text": text
+    }
     if buttons:
         data["reply_markup"] = buttons
 
-    requests.post(url, json=data)
+    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=data)
 
-# Weiterleiten
-def forward_to_topic(message_id):
-    if not all(CONFIG.values()):
-        print("⚠️ Setup unvollständig:", CONFIG)
+# 🔁 Forward Funktion
+def forward_message(config, message_id):
+    if not all([config.get("channel_id"), config.get("group_id")]):
+        print("❌ Config unvollständig:", config)
         return
 
-    url = f"https://api.telegram.org/bot{TOKEN}/forwardMessage"
     data = {
-        "chat_id": CONFIG["group_id"],
-        "from_chat_id": CONFIG["channel_id"],
-        "message_id": message_id,
-        "message_thread_id": CONFIG["topic_id"]
+        "chat_id": config["group_id"],
+        "from_chat_id": config["channel_id"],
+        "message_id": message_id
     }
 
-    r = requests.post(url, data=data)
+    if config.get("topic_id"):
+        data["message_thread_id"] = config["topic_id"]
+
+    r = requests.post(
+        f"https://api.telegram.org/bot{TOKEN}/forwardMessage",
+        data=data
+    )
+
     print("➡️ Forward:", r.json())
 
-# Webhook
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     if request.headers.get("content-type") != "application/json":
@@ -57,11 +58,15 @@ def webhook():
     update = request.get_json()
     print("📨", update)
 
-    # 👤 PRIVATCHAT STEUERUNG
+    # 👤 USER INTERACTION (Privatchat)
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
         text = msg.get("text", "")
+
+        # init config
+        if chat_id not in user_configs:
+            user_configs[chat_id] = {}
 
         # START
         if text == "/start":
@@ -69,52 +74,61 @@ def webhook():
                 "keyboard": [
                     ["📢 Kanal setzen"],
                     ["💬 Gruppe setzen"],
-                    ["🧵 Topic setzen"]
+                    ["🧵 Topic setzen"],
+                    ["📊 Status"]
                 ],
                 "resize_keyboard": True
             }
-            send_message(chat_id, "Setup starten:", buttons)
+            send_message(chat_id, "⚙️ Setup starten:", buttons)
 
         elif text == "📢 Kanal setzen":
-            USER_STATE[chat_id] = "channel"
-            send_message(chat_id, "➡️ Bitte leite eine Nachricht aus deinem KANAL weiter")
+            user_states[chat_id] = "channel"
+            send_message(chat_id, "➡️ Leite eine Nachricht aus deinem KANAL weiter")
 
         elif text == "💬 Gruppe setzen":
-            USER_STATE[chat_id] = "group"
-            send_message(chat_id, "➡️ Bitte leite eine Nachricht aus deiner GRUPPE weiter")
+            user_states[chat_id] = "group"
+            send_message(chat_id, "➡️ Leite eine Nachricht aus deiner GRUPPE weiter")
 
         elif text == "🧵 Topic setzen":
-            USER_STATE[chat_id] = "topic"
-            send_message(chat_id, "➡️ Bitte sende eine Nachricht DIREKT im gewünschten Topic")
+            user_states[chat_id] = "topic"
+            send_message(chat_id, "➡️ Schreibe eine Nachricht IM gewünschten Topic")
 
-        # 📢 Kanal erkennen
-        elif "forward_from_chat" in msg and USER_STATE.get(chat_id) == "channel":
-            CONFIG["channel_id"] = msg["forward_from_chat"]["id"]
-            send_message(chat_id, f"✅ Kanal gesetzt:\n{CONFIG['channel_id']}")
-            USER_STATE[chat_id] = None
+        elif text == "📊 Status":
+            cfg = user_configs.get(chat_id, {})
+            send_message(chat_id, f"📊 Deine Config:\n{cfg}")
 
-        # 💬 Gruppe erkennen
-        elif "forward_from_chat" in msg and USER_STATE.get(chat_id) == "group":
-            CONFIG["group_id"] = msg["forward_from_chat"]["id"]
-            send_message(chat_id, f"✅ Gruppe gesetzt:\n{CONFIG['group_id']}")
-            USER_STATE[chat_id] = None
+        # 📢 Kanal speichern
+        elif "forward_from_chat" in msg and user_states.get(chat_id) == "channel":
+            user_configs[chat_id]["channel_id"] = msg["forward_from_chat"]["id"]
+            send_message(chat_id, f"✅ Kanal gespeichert")
+            user_states[chat_id] = None
 
-        # 🧵 Topic erkennen
-        elif USER_STATE.get(chat_id) == "topic":
+        # 💬 Gruppe speichern
+        elif "forward_from_chat" in msg and user_states.get(chat_id) == "group":
+            user_configs[chat_id]["group_id"] = msg["forward_from_chat"]["id"]
+            send_message(chat_id, f"✅ Gruppe gespeichert")
+            user_states[chat_id] = None
+
+        # 🧵 Topic speichern
+        elif user_states.get(chat_id) == "topic":
             if "message_thread_id" in msg:
-                CONFIG["topic_id"] = msg["message_thread_id"]
-                send_message(chat_id, f"✅ Topic gesetzt:\n{CONFIG['topic_id']}")
-                USER_STATE[chat_id] = None
+                user_configs[chat_id]["topic_id"] = msg["message_thread_id"]
+                user_configs[chat_id]["group_id"] = msg["chat"]["id"]
+
+                send_message(chat_id, f"✅ Topic gespeichert (ID: {msg['message_thread_id']})")
+                user_states[chat_id] = None
             else:
-                send_message(chat_id, "❌ Bitte wirklich IM Topic schreiben!")
+                send_message(chat_id, "❌ Bitte IM Topic schreiben!")
 
     # 📢 CHANNEL POSTS
     if "channel_post" in update:
         post = update["channel_post"]
+        channel_id = post["chat"]["id"]
 
-        if post["chat"]["id"] == CONFIG["channel_id"]:
-            print("🎯 Kanalpost erkannt")
-            forward_to_topic(post["message_id"])
+        for user_id, config in user_configs.items():
+            if config.get("channel_id") == channel_id:
+                print(f"🎯 Weiterleitung für User {user_id}")
+                forward_message(config, post["message_id"])
 
     return "", 200
 
