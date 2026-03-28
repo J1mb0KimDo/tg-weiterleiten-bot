@@ -1,18 +1,20 @@
 import os
 import requests
-import time
+from flask import Flask, request, abort
 
-# 🔑 HIER DEIN BOT TOKEN EINTRAGEN
 TOKEN = os.getenv("TOKEN")
-
-# 📢 DEIN KANAL
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
-
-# 💬 DEINE GRUPPE
 GROUP_ID = int(os.getenv("GROUP_ID"))
-
-# 🧵 DEIN TOPIC ("Events")
 TOPIC_ID = int(os.getenv("TOPIC_ID"))
+BASE_URL = os.getenv("BASE_URL")  # z.B. https://dein-bot.onrender.com
+
+app = Flask(__name__)
+
+def set_webhook():
+    url = f"{BASE_URL}/{TOKEN}"
+    webhook_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={url}"
+    r = requests.get(webhook_url)
+    print("🔗 Webhook gesetzt:", r.json())
 
 
 def forward_to_topic(from_chat_id, message_id):
@@ -24,41 +26,44 @@ def forward_to_topic(from_chat_id, message_id):
         "message_thread_id": TOPIC_ID
     }
 
-    response = requests.post(url, data=data)
-    print("Weitergeleitet:", response.json())
+    try:
+        r = requests.post(url, data=data)
+        res = r.json()
+
+        if not res.get("ok"):
+            print("❌ Fehler:", res)
+        else:
+            print(f"✅ Weitergeleitet: {message_id}")
+
+    except Exception as e:
+        print("🔥 Exception:", e)
 
 
-def get_updates(offset=None):
-    url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
-    params = {
-        "timeout": 30,
-        "offset": offset
-    }
-    return requests.get(url, params=params).json()
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    if request.headers.get("content-type") == "application/json":
+        update = request.get_json()
+
+        if "channel_post" in update:
+            post = update["channel_post"]
+
+            if post["chat"]["id"] == CHANNEL_ID:
+                print("📨 Neuer Kanal-Post erkannt")
+
+                message_id = post["message_id"]
+                forward_to_topic(CHANNEL_ID, message_id)
+
+        return "", 200
+
+    return abort(403)
 
 
-def main():
-    print("🤖 Bot läuft... wartet auf neue Kanal-Posts")
-    offset = None
-
-    while True:
-        updates = get_updates(offset)
-
-        for update in updates.get("result", []):
-            offset = update["update_id"] + 1
-
-            if "channel_post" in update:
-                post = update["channel_post"]
-
-                # Nur dein Kanal
-                if post["chat"]["id"] == CHANNEL_ID:
-                    message_id = post["message_id"]
-
-                    print("📨 Neuer Kanal-Post erkannt → leite weiter")
-                    forward_to_topic(CHANNEL_ID, message_id)
-
-        time.sleep(1)
+@app.route("/")
+def index():
+    return "🤖 Bot läuft stabil!"
 
 
 if __name__ == "__main__":
-    main()
+    set_webhook()  # 🔥 automatisch beim Start
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
