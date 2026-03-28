@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: telegram-bot
+    name: telegram-forward-bot
     env: python
-    plan: free   # oder starter (empfohlen!)
+    plan: free   # oder starter (empfohlen gegen Sleep)
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    startCommand: gunicorn bot:app
     autoDeploy: true
