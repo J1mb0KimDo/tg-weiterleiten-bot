@@ -9,8 +9,8 @@ TOPIC_ID = int(os.getenv("TOPIC_ID"))
 
 app = Flask(__name__)
 
-def copy_to_topic(from_chat_id, message_id):
-    url = f"https://api.telegram.org/bot{TOKEN}/copyMessage"
+def forward_to_topic(from_chat_id, message_id):
+    url = f"https://api.telegram.org/bot{TOKEN}/forwardMessage"
     data = {
         "chat_id": GROUP_ID,
         "from_chat_id": from_chat_id,
@@ -31,7 +31,7 @@ def webhook():
             post = update['channel_post']
             if post['chat']['id'] == CHANNEL_ID:
                 print("🎯 Kanal-Post erkannt!")
-                copy_to_topic(CHANNEL_ID, post['message_id'])
+                forward_to_topic(CHANNEL_ID, post['message_id'])
         
         return '', 200
     abort(403)
