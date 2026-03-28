@@ -1,64 +1,45 @@
 import os
 import requests
-import time
+from flask import Flask, request, abort
 
-# 🔑 HIER DEIN BOT TOKEN EINTRAGEN
 TOKEN = os.getenv("TOKEN")
-
-# 📢 DEIN KANAL
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
-
-# 💬 DEINE GRUPPE
 GROUP_ID = int(os.getenv("GROUP_ID"))
-
-# 🧵 DEIN TOPIC ("Events")
 TOPIC_ID = int(os.getenv("TOPIC_ID"))
 
+app = Flask(__name__)
 
-def forward_to_topic(from_chat_id, message_id):
-    url = f"https://api.telegram.org/bot{TOKEN}/forwardMessage"
+def copy_to_topic(from_chat_id, message_id):
+    url = f"https://api.telegram.org/bot{TOKEN}/copyMessage"
     data = {
         "chat_id": GROUP_ID,
         "from_chat_id": from_chat_id,
         "message_id": message_id,
         "message_thread_id": TOPIC_ID
     }
-
     response = requests.post(url, data=data)
-    print("Weitergeleitet:", response.json())
+    print("✅ Kopiert:", response.json())
+    return response.json()
 
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        update = request.get_json()
+        print("📨 Update:", update)
+        
+        if 'channel_post' in update:
+            post = update['channel_post']
+            if post['chat']['id'] == CHANNEL_ID:
+                print("🎯 Kanal-Post erkannt!")
+                copy_to_topic(CHANNEL_ID, post['message_id'])
+        
+        return '', 200
+    abort(403)
 
-def get_updates(offset=None):
-    url = f"https://api.telegram.org/bot8691548519:AAEiMgb2POy8kFhg5qZjXTt5M6pwgmVEXLI/getUpdates"
-    params = {
-        "timeout": 30,
-        "offset": offset
-    }
-    return requests.get(url, params=params).json()
+@app.route('/')
+def index():
+    return "🚀 Telegram Copy Bot läuft! Webhook ready."
 
-
-def main():
-    print("🤖 Bot läuft... wartet auf neue Kanal-Posts")
-    offset = None
-
-    while True:
-        updates = get_updates(offset)
-
-        for update in updates.get("result", []):
-            offset = update["update_id"] + 1
-
-            if "channel_post" in update:
-                post = update["channel_post"]
-
-                # Nur dein Kanal
-                if post["chat"]["id"] == CHANNEL_ID:
-                    message_id = post["message_id"]
-
-                    print("📨 Neuer Kanal-Post erkannt → leite weiter")
-                    forward_to_topic(CHANNEL_ID, message_id)
-
-        time.sleep(1)
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port, debug=False)
